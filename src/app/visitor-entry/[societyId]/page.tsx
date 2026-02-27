@@ -1,21 +1,37 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useState, useRef, useEffect } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+
 import {
   addDoc,
   collection,
   serverTimestamp,
+  getDoc,
   getDocs,
+  doc,
   query,
   where,
 } from "firebase/firestore";
+
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 
 export default function VisitorEntryPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+
   const societyId = params.societyId as string;
+  const key = searchParams.get("key");
+
+  //////////////////////////////////////////////////////
+  // STATES
+  //////////////////////////////////////////////////////
+
+  const [submitting, setSubmitting] = useState(false);
+
+  const [validQR, setValidQR] = useState(false);
+  const [checkingQR, setCheckingQR] = useState(true);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -32,34 +48,57 @@ export default function VisitorEntryPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // 🔹 Start Camera
+  //////////////////////////////////////////////////////
+  // 🔐 QR VALIDATION
+  //////////////////////////////////////////////////////
+
+  useEffect(() => {
+    const validateQR = async () => {
+      try {
+        if (!societyId || !key) {
+          setCheckingQR(false);
+          return;
+        }
+
+        const docSnap = await getDoc(doc(db, "societies", societyId));
+
+        if (
+          docSnap.exists() &&
+          docSnap.data().qrKey === key &&
+          docSnap.data().status === "active"
+        ) {
+          setValidQR(true);
+        }
+      } catch (error) {
+        console.error("QR validation error:", error);
+      } finally {
+        setCheckingQR(false);
+      }
+    };
+
+    validateQR();
+  }, [societyId, key]);
+
+  //////////////////////////////////////////////////////
+  // 📷 CAMERA
+  //////////////////////////////////////////////////////
+
   const startCamera = async () => {
-  if (
-    typeof navigator === "undefined" ||
-    !navigator.mediaDevices ||
-    !navigator.mediaDevices.getUserMedia
-  ) {
-    alert("Camera not supported on this device or connection.");
-    return;
-  }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" },
-    });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
 
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
+      setCameraOpen(true);
+    } catch (error) {
+      alert("Camera not accessible");
     }
+  };
 
-    setCameraOpen(true);
-  } catch (error) {
-    console.error(error);
-    alert("Unable to access camera.");
-  }
-};
-
-  // 🔹 Capture Photo
   const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
 
@@ -77,61 +116,98 @@ export default function VisitorEntryPage() {
     );
 
     if (blob) {
-      const file = new File([blob], "live-photo.jpg", {
+      const file = new File([blob], "visitor.jpg", {
         type: "image/jpeg",
       });
       setPhoto(file);
     }
 
     const stream = video.srcObject as MediaStream | null;
-
-if (stream) {
-  stream.getTracks().forEach((track) => track.stop());
+    if (stream) {
+    stream.getTracks().forEach((track) => track.stop());
 }
 
     setCameraOpen(false);
   };
 
+  //////////////////////////////////////////////////////
+  // 📝 SUBMIT
+  //////////////////////////////////////////////////////
+
   const handleSubmit = async (e: any) => {
     e.preventDefault();
 
-    if (!name || !phone || !unitNo || !purpose) {
-      alert("Please fill all required fields");
+    if (submitting) return;
+
+    if (!name.trim() || !phone.trim() || !unitNo.trim() || !purpose.trim()) {
+      alert("All fields are required");
+      return;
+    }
+
+    if (!/^[0-9]{10}$/.test(phone)) {
+      alert("Enter valid 10 digit phone number");
       return;
     }
 
     if (!photo) {
-      alert("Please capture visitor photo");
+      alert("Photo is required");
       return;
     }
 
     try {
+      setSubmitting(true);
       setLoading(true);
 
-      // 🔹 1️⃣ Validate Unit
-      const unitQuery = query(
-        collection(db, "societies", societyId, "units"),
-        where("unitNo", "==", unitNo.toUpperCase())
+      const upperUnit = unitNo.trim().toUpperCase();
+
+      //////////////////////////////////////////////////////
+      // UNIT VALIDATION
+      //////////////////////////////////////////////////////
+
+      const unitRef = doc(
+        db,
+        "societies",
+        societyId,
+        "units",
+        upperUnit
       );
 
-      const unitSnapshot = await getDocs(unitQuery);
+      const unitSnap = await getDoc(unitRef);
 
-      if (unitSnapshot.empty) {
+      if (!unitSnap.exists()) {
         alert("Unit not found");
-        setLoading(false);
         return;
       }
 
-      const unitData = unitSnapshot.docs[0].data();
-      const residentUid = unitData.residentUid;
+      const unitData = unitSnap.data();
 
-      if (!residentUid) {
+      if (!unitData.residentUid) {
         alert("No resident assigned to this unit");
-        setLoading(false);
         return;
       }
 
-      // 🔹 2️⃣ Upload Photo
+      //////////////////////////////////////////////////////
+      // DUPLICATE CHECK
+      //////////////////////////////////////////////////////
+
+      const duplicateQuery = query(
+        collection(db, "societies", societyId, "visitorRequests"),
+        where("phone", "==", phone),
+        where("unitNo", "==", upperUnit),
+        where("status", "==", "pending")
+      );
+
+      const duplicateSnap = await getDocs(duplicateQuery);
+
+      if (!duplicateSnap.empty) {
+        alert("Request already pending for this unit");
+        return;
+      }
+
+      //////////////////////////////////////////////////////
+      // PHOTO UPLOAD
+      //////////////////////////////////////////////////////
+
       const photoRef = ref(
         storage,
         `visitor_photos/${Date.now()}_${photo.name}`
@@ -140,17 +216,20 @@ if (stream) {
       await uploadBytes(photoRef, photo);
       const photoUrl = await getDownloadURL(photoRef);
 
-      // 🔹 3️⃣ Save Visitor Request
+      //////////////////////////////////////////////////////
+      // SAVE REQUEST
+      //////////////////////////////////////////////////////
+
       await addDoc(
         collection(db, "societies", societyId, "visitorRequests"),
         {
-          name,
+          name: name.trim(),
           phone,
-          unitNo: unitNo.toUpperCase(),
-          purpose,
-          vehicleNumber,
+          unitNo: upperUnit,
+          purpose: purpose.trim(),
+          vehicleNumber: vehicleNumber.trim(),
           photoUrl,
-          residentUid,
+          residentUid: unitData.residentUid,
           status: "pending",
           source: "qr",
           createdAt: serverTimestamp(),
@@ -171,15 +250,36 @@ if (stream) {
       alert("Something went wrong");
     } finally {
       setLoading(false);
+      setSubmitting(false);
     }
   };
+
+  //////////////////////////////////////////////////////
+  // UI STATES
+  //////////////////////////////////////////////////////
+
+  if (checkingQR) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        Checking QR...
+      </div>
+    );
+  }
+
+  if (!validQR) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-600 text-xl">
+        Invalid or Expired QR Code
+      </div>
+    );
+  }
 
   if (success) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">
-            Visitor Request Submitted
+            Request Submitted
           </h1>
           <p>Please wait for resident approval.</p>
         </div>
@@ -187,11 +287,16 @@ if (stream) {
     );
   }
 
+  //////////////////////////////////////////////////////
+  // FORM UI
+  //////////////////////////////////////////////////////
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
       <div className="w-full max-w-md bg-white shadow-md rounded-lg p-6">
+
         <h1 className="text-xl font-bold mb-6 text-center">
-          Visitor Entry Form
+          Visitor Entry
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -214,7 +319,7 @@ if (stream) {
 
           <input
             type="text"
-            placeholder="Unit Number (e.g. C-102)"
+            placeholder="Unit Number"
             value={unitNo}
             onChange={(e) => setUnitNo(e.target.value)}
             className="w-full border p-2 rounded"
@@ -236,7 +341,6 @@ if (stream) {
             className="w-full border p-2 rounded"
           />
 
-          {/* CAMERA SECTION */}
           {!cameraOpen && !photo && (
             <button
               type="button"
@@ -270,11 +374,12 @@ if (stream) {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || submitting}
             className="w-full bg-black text-white p-2 rounded"
           >
             {loading ? "Submitting..." : "Submit"}
           </button>
+
         </form>
       </div>
     </div>

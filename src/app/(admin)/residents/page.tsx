@@ -10,7 +10,7 @@ import Link from "next/link";
 interface Unit {
   id: string;
   unitNo: string;
-  type?: string;   // 👈 ADD THIS
+  type?: string;
   status?: string;
   currentMembers?: number;
   familyLimit?: number;
@@ -27,7 +27,10 @@ export default function ResidentsPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [unitId, setUnitId] = useState("");
+  const [selectedType, setSelectedType] = useState("");
 
+  //////////////////////////////////////////////////////
+  // INIT
   //////////////////////////////////////////////////////
 
   useEffect(() => {
@@ -48,7 +51,7 @@ export default function ResidentsPage() {
       const data: Unit[] = snapshot.docs.map((doc) => ({
         id: doc.id,
         unitNo: doc.data().unitNo,
-        type: doc.data().type || "flat",   // 👈 ADD THIS
+        type: doc.data().type || "flat",
         status: doc.data().status || "vacant",
         currentMembers: doc.data().currentMembers || 0,
         familyLimit: doc.data().familyLimit || 4,
@@ -63,7 +66,7 @@ export default function ResidentsPage() {
   }, []);
 
   //////////////////////////////////////////////////////
-  // SEARCH
+  // SEARCH FILTER
   //////////////////////////////////////////////////////
 
   useEffect(() => {
@@ -72,6 +75,24 @@ export default function ResidentsPage() {
     );
     setFilteredUnits(filtered);
   }, [search, units]);
+
+  //////////////////////////////////////////////////////
+  // STATUS COLOR
+  //////////////////////////////////////////////////////
+
+  const getStatusStyle = (status?: string) => {
+    switch (status) {
+      case "occupied":
+        return "bg-green-100 text-green-700";
+      case "inactive":
+        return "bg-red-100 text-red-700";
+      case "unconfigured":
+        return "bg-yellow-100 text-yellow-700";
+      case "vacant":
+      default:
+        return "bg-gray-200 text-gray-700";
+    }
+  };
 
   //////////////////////////////////////////////////////
   // CREATE RESIDENT
@@ -105,6 +126,7 @@ export default function ResidentsPage() {
       setName("");
       setEmail("");
       setUnitId("");
+      setSelectedType("");
 
       window.location.reload();
     } catch (error: any) {
@@ -167,6 +189,19 @@ export default function ResidentsPage() {
 
   //////////////////////////////////////////////////////
 
+  const uniqueTypes = [
+    ...new Set(units.map((u) => u.type?.toLowerCase()))
+  ];
+
+  const unitsByType = selectedType
+    ? units.filter(
+        (u) =>
+          u.type?.toLowerCase() === selectedType.toLowerCase()
+      )
+    : [];
+
+  //////////////////////////////////////////////////////
+
   return (
     <div>
       <h2 className="text-2xl font-bold mb-6">
@@ -214,54 +249,46 @@ export default function ResidentsPage() {
         ) : (
           <table className="w-full">
             <thead className="bg-gray-100">
-  <tr>{[
-    <th key="unit" className="p-3 text-left w-1/5">Unit</th>,
-    <th key="type" className="p-3 text-left w-1/5">Type</th>,
-    <th key="status" className="p-3 text-left w-1/5">Status</th>,
-    <th key="members" className="p-3 text-center w-1/5">Members</th>,
-    <th key="action" className="p-3 text-center w-1/5">Action</th>,
-  ]}</tr>
-</thead>
+              <tr>
+                <th className="p-3 text-left">Unit</th>
+                <th className="p-3 text-left">Type</th>
+                <th className="p-3 text-left">Status</th>
+                <th className="p-3 text-center">Action</th>
+              </tr>
+            </thead>
 
             <tbody>
-  {filteredUnits.map((unit) => (
-    <tr key={unit.id} className="border-t hover:bg-gray-50">
-      <td className="p-3 font-medium">
-        {unit.unitNo}
-      </td>
+              {filteredUnits.map((unit) => (
+                <tr key={unit.id} className="border-t hover:bg-gray-50">
+                  <td className="p-3 font-medium">
+                    {unit.unitNo}
+                  </td>
 
-      {/* TYPE COLUMN */}
-      <td className="p-3 capitalize">
-        {unit.type}
-      </td>
+                  <td className="p-3 capitalize">
+                    {unit.type}
+                  </td>
 
-      <td className="p-3">
-        <span
-          className={`px-3 py-1 rounded text-sm font-medium ${
-            unit.status === "occupied"
-              ? "bg-green-100 text-green-700"
-              : "bg-gray-200 text-gray-700"
-          }`}
-        >
-          {unit.status}
-        </span>
-      </td>
+                  <td className="p-3">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusStyle(
+                        unit.status
+                      )}`}
+                    >
+                      {unit.status}
+                    </span>
+                  </td>
 
-      <td className="p-3 text-center">
-        {unit.currentMembers}/{unit.familyLimit}
-      </td>
-
-      <td className="p-3 text-center">
-        <Link
-          href={`/residents/${unit.id}`}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm"
-        >
-          Manage
-        </Link>
-      </td>
-    </tr>
-  ))}
-</tbody>
+                  <td className="p-3 text-center">
+                    <Link
+                      href={`/residents/${unit.id}`}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm"
+                    >
+                      Manage
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         )}
       </div>
@@ -287,13 +314,37 @@ export default function ResidentsPage() {
               onChange={(e) => setEmail(e.target.value)}
             />
 
+            {/* TYPE FILTER */}
+            <select
+              className="border p-2 w-full mb-3 rounded"
+              value={selectedType}
+              onChange={(e) => {
+                setSelectedType(e.target.value);
+                setUnitId("");
+              }}
+            >
+              <option value="">Select Unit Type</option>
+              {uniqueTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+
+            {/* UNIT DROPDOWN */}
             <select
               className="border p-2 w-full mb-4 rounded"
               value={unitId}
               onChange={(e) => setUnitId(e.target.value)}
+              disabled={!selectedType}
             >
-              <option value="">Select Unit</option>
-              {units.map((u) => (
+              <option value="">
+                {selectedType
+                  ? "Select Unit"
+                  : "Select Type First"}
+              </option>
+
+              {unitsByType.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.unitNo}
                 </option>
@@ -321,4 +372,3 @@ export default function ResidentsPage() {
     </div>
   );
 }
-

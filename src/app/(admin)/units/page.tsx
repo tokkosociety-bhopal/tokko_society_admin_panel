@@ -54,10 +54,23 @@ export default function UnitsPage() {
     setSocietyId(sId);
 
     const societyDoc = await getDoc(doc(db, "societies", sId));
-    if (societyDoc.exists()) {
-      setUnitsUsed(societyDoc.data().unitsUsed || 0);
-      setTotalUnits(societyDoc.data().totalUnits || 0);
-    }
+if (societyDoc.exists()) {
+
+  // 🔥 Get real units collection
+  const unitsSnap = await getDocs(
+    collection(db, "societies", sId, "units")
+  );
+
+  // 🔥 Real total units
+  setTotalUnits(unitsSnap.size);
+
+  // 🔥 Real occupied count
+  const occupiedCount = unitsSnap.docs.filter(
+    (doc) => doc.data().status === "occupied"
+  ).length;
+
+  setUnitsUsed(occupiedCount);
+}
 
     fetchApprovedUnits(sId);
   };
