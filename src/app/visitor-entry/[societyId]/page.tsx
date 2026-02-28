@@ -35,13 +35,12 @@ export default function VisitorEntryPage() {
   const [unitNo, setUnitNo] = useState("");
   const [purpose, setPurpose] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
-
   const [photo, setPhoto] = useState<File | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   //////////////////////////////////////////////////////
-  // 🔐 QR VALIDATION (UNCHANGED)
+  // 🔐 QR VALIDATION
   //////////////////////////////////////////////////////
 
   useEffect(() => {
@@ -53,7 +52,6 @@ export default function VisitorEntryPage() {
         }
 
         const docSnap = await getDoc(doc(db, "societies", societyId));
-
         if (!docSnap.exists()) {
           setCheckingQR(false);
           return;
@@ -107,12 +105,11 @@ export default function VisitorEntryPage() {
   }, [societyId, key]);
 
   //////////////////////////////////////////////////////
-  // 📝 SUBMIT (UNCHANGED LOGIC)
+  // 📝 SUBMIT
   //////////////////////////////////////////////////////
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
-
     if (submitting) return;
 
     if (!name.trim() || !phone.trim() || !unitNo.trim() || !purpose.trim()) {
@@ -136,6 +133,7 @@ export default function VisitorEntryPage() {
 
       const upperUnit = unitNo.trim().toUpperCase();
 
+      // Unit validation
       const unitRef = doc(db, "societies", societyId, "units", upperUnit);
       const unitSnap = await getDoc(unitRef);
 
@@ -151,8 +149,9 @@ export default function VisitorEntryPage() {
         return;
       }
 
+      // Duplicate check
       const duplicateQuery = query(
-        collection(db, "societies", societyId, "visitorRequests"),
+        collection(db, "societies", societyId, "visitors"),
         where("phone", "==", phone),
         where("unitNo", "==", upperUnit),
         where("status", "==", "pending")
@@ -165,6 +164,7 @@ export default function VisitorEntryPage() {
         return;
       }
 
+      // Upload photo
       const photoRef = ref(
         storage,
         `visitor_photos/${Date.now()}_${photo.name}`
@@ -173,8 +173,9 @@ export default function VisitorEntryPage() {
       await uploadBytes(photoRef, photo);
       const photoUrl = await getDownloadURL(photoRef);
 
+      // Save visitor
       await addDoc(
-        collection(db, "societies", societyId, "visitorRequests"),
+        collection(db, "societies", societyId, "visitors"),
         {
           name: name.trim(),
           phone,
@@ -185,7 +186,7 @@ export default function VisitorEntryPage() {
           residentUid: unitData.residentUid,
           status: "pending",
           source: "qr",
-          createdAt: serverTimestamp(),
+          entryTime: serverTimestamp(),
         }
       );
 
@@ -196,6 +197,7 @@ export default function VisitorEntryPage() {
       setPurpose("");
       setVehicleNumber("");
       setPhoto(null);
+
     } catch (error) {
       console.error(error);
       alert("Something went wrong");
@@ -246,30 +248,45 @@ export default function VisitorEntryPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
 
-          <input type="text" placeholder="Visitor Name"
+          <input
+            type="text"
+            placeholder="Visitor Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full border p-2 rounded" />
+            className="w-full border p-2 rounded"
+          />
 
-          <input type="tel" placeholder="Phone Number"
+          <input
+            type="tel"
+            placeholder="Phone Number"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full border p-2 rounded" />
+            className="w-full border p-2 rounded"
+          />
 
-          <input type="text" placeholder="Unit Number"
+          <input
+            type="text"
+            placeholder="Unit Number"
             value={unitNo}
             onChange={(e) => setUnitNo(e.target.value)}
-            className="w-full border p-2 rounded" />
+            className="w-full border p-2 rounded"
+          />
 
-          <input type="text" placeholder="Purpose"
+          <input
+            type="text"
+            placeholder="Purpose"
             value={purpose}
             onChange={(e) => setPurpose(e.target.value)}
-            className="w-full border p-2 rounded" />
+            className="w-full border p-2 rounded"
+          />
 
-          <input type="text" placeholder="Vehicle Number (Optional)"
+          <input
+            type="text"
+            placeholder="Vehicle Number (Optional)"
             value={vehicleNumber}
             onChange={(e) => setVehicleNumber(e.target.value)}
-            className="w-full border p-2 rounded" />
+            className="w-full border p-2 rounded"
+          />
 
           {/* Native Camera */}
 
