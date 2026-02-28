@@ -53,31 +53,42 @@ export default function VisitorEntryPage() {
   //////////////////////////////////////////////////////
 
   useEffect(() => {
-    const validateQR = async () => {
-      try {
-        if (!societyId || !key) {
-          setCheckingQR(false);
-          return;
-        }
-
-        const docSnap = await getDoc(doc(db, "societies", societyId));
-
-        if (
-          docSnap.exists() &&
-          docSnap.data().qrKey === key &&
-          docSnap.data().status === "active"
-        ) {
-          setValidQR(true);
-        }
-      } catch (error) {
-        console.error("QR validation error:", error);
-      } finally {
+  const validateQR = async () => {
+    try {
+      if (!societyId || !key) {
         setCheckingQR(false);
+        return;
       }
-    };
 
-    validateQR();
-  }, [societyId, key]);
+      const docSnap = await getDoc(doc(db, "societies", societyId));
+
+      if (!docSnap.exists()) {
+        setCheckingQR(false);
+        return;
+      }
+
+      const data = docSnap.data();
+
+      const now = new Date();
+
+      if (
+        data.qrKey === key &&
+        data.status === "active" &&
+        data.qrExpiry &&
+        data.qrExpiry.toDate() > now
+      ) {
+        setValidQR(true);
+      }
+
+    } catch (error) {
+      console.error("QR validation error:", error);
+    } finally {
+      setCheckingQR(false);
+    }
+  };
+
+  validateQR();
+}, [societyId, key]);
 
   //////////////////////////////////////////////////////
   // 📷 CAMERA
