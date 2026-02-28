@@ -68,6 +68,13 @@ useEffect(() => {
       const data = docSnap.data();
       const now = new Date();
 
+      console.log("Society ID:", societyId);
+console.log("URL Key:", key);
+console.log("DB Key:", data.qrKey);
+console.log("Status:", data.status);
+console.log("Expiry:", data.qrExpiry);
+console.log("Now:", now);
+
       if (!data) {
         setCheckingQR(false);
         return;
