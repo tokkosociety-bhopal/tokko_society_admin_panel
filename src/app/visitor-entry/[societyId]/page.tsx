@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-
 import {
   addDoc,
   collection,
@@ -13,24 +12,23 @@ import {
   query,
   where,
 } from "firebase/firestore";
-
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 
 export default function VisitorEntryPage() {
   const { societyId } = useParams() as { societyId: string };
   const searchParams = useSearchParams();
-
   const key = searchParams.get("key");
-
-  const [checkingQR, setCheckingQR] = useState(true);
-  const [validQR, setValidQR] = useState(false);
 
   //////////////////////////////////////////////////////
   // STATES
   //////////////////////////////////////////////////////
 
+  const [checkingQR, setCheckingQR] = useState(true);
+  const [validQR, setValidQR] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -39,162 +37,75 @@ export default function VisitorEntryPage() {
   const [vehicleNumber, setVehicleNumber] = useState("");
 
   const [photo, setPhoto] = useState<File | null>(null);
-  const [cameraOpen, setCameraOpen] = useState(false);
-
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
 
   //////////////////////////////////////////////////////
-  // 🔐 QR VALIDATION
-  //////////////////////////////////////////////////////
-useEffect(() => {
-  const validateQR = async () => {
-    try {
-      if (!societyId || !key) {
-        setCheckingQR(false);
-        return;
-      }
-
-      const docSnap = await getDoc(doc(db, "societies", societyId));
-
-      if (!docSnap.exists()) {
-        setCheckingQR(false);
-        return;
-      }
-
-      const data = docSnap.data();
-      const now = new Date();
-
-      console.log("Society ID:", societyId);
-console.log("URL Key:", key);
-console.log("DB Key:", data.qrKey);
-console.log("Status:", data.status);
-console.log("Expiry:", data.qrExpiry);
-console.log("Now:", now);
-
-      if (!data) {
-        setCheckingQR(false);
-        return;
-      }
-
-      // 1️⃣ Status check
-      if (data.status !== "active") {
-        setCheckingQR(false);
-        return;
-      }
-
-      // 2️⃣ Safe key comparison (trimmed)
-      const dbKey = String(data.qrKey || "").trim();
-      const urlKey = String(key || "").trim();
-
-      if (!dbKey || dbKey !== urlKey) {
-        setCheckingQR(false);
-        return;
-      }
-
-      // 3️⃣ Expiry exists check
-      if (!data.qrExpiry) {
-        setCheckingQR(false);
-        return;
-      }
-
-      // 4️⃣ Convert Firestore Timestamp safely
-      const expiryDate =
-        typeof data.qrExpiry.toDate === "function"
-          ? data.qrExpiry.toDate()
-          : new Date(data.qrExpiry);
-
-      // 5️⃣ Expiry validation
-      if (expiryDate.getTime() <= now.getTime()) {
-        setCheckingQR(false);
-        return;
-      }
-
-      // ✅ Everything valid
-      setValidQR(true);
-
-    } catch (error) {
-      console.error("QR validation error:", error);
-    } finally {
-      setCheckingQR(false);
-    }
-  };
-
-  validateQR();
-}, [societyId, key]);
-
-  //////////////////////////////////////////////////////
-  // 📷 CAMERA
+  // 🔐 QR VALIDATION (UNCHANGED)
   //////////////////////////////////////////////////////
 
-  const startCamera = async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
-    });
+  useEffect(() => {
+    const validateQR = async () => {
+      try {
+        if (!societyId || !key) {
+          setCheckingQR(false);
+          return;
+        }
 
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
+        const docSnap = await getDoc(doc(db, "societies", societyId));
 
-      // 🔥 Wait for metadata before playing
-      videoRef.current.onloadedmetadata = () => {
-        videoRef.current?.play();
-      };
-    }
+        if (!docSnap.exists()) {
+          setCheckingQR(false);
+          return;
+        }
 
-    setCameraOpen(true);
+        const data = docSnap.data();
+        const now = new Date();
 
-  } catch (err) {
-    alert("Camera permission denied");
-    console.error(err);
-  }
-};
+        if (!data) {
+          setCheckingQR(false);
+          return;
+        }
 
-  const capturePhoto = async () => {
-  if (!videoRef.current || !canvasRef.current) return;
+        if (data.status !== "active") {
+          setCheckingQR(false);
+          return;
+        }
 
-  const video = videoRef.current;
-  const canvas = canvasRef.current;
+        const dbKey = String(data.qrKey || "").trim();
+        const urlKey = String(key || "").trim();
 
-  // 🔥 Force proper dimensions
-  const width = video.videoWidth || 640;
-  const height = video.videoHeight || 480;
+        if (!dbKey || dbKey !== urlKey) {
+          setCheckingQR(false);
+          return;
+        }
 
-  canvas.width = width;
-  canvas.height = height;
+        if (!data.qrExpiry) {
+          setCheckingQR(false);
+          return;
+        }
 
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+        const expiryDate =
+          typeof data.qrExpiry.toDate === "function"
+            ? data.qrExpiry.toDate()
+            : new Date(data.qrExpiry);
 
-  ctx.drawImage(video, 0, 0, width, height);
+        if (expiryDate.getTime() <= now.getTime()) {
+          setCheckingQR(false);
+          return;
+        }
 
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.9)
-  );
+        setValidQR(true);
+      } catch (error) {
+        console.error("QR validation error:", error);
+      } finally {
+        setCheckingQR(false);
+      }
+    };
 
-  if (!blob) {
-    alert("Failed to capture image");
-    return;
-  }
-
-  const file = new File([blob], "visitor.jpg", {
-    type: "image/jpeg",
-  });
-
-  setPhoto(file);
-
-  // Stop camera
-  const stream = video.srcObject as MediaStream;
-  stream?.getTracks().forEach((track) => track.stop());
-
-  setCameraOpen(false);
-};
+    validateQR();
+  }, [societyId, key]);
 
   //////////////////////////////////////////////////////
-  // 📝 SUBMIT
+  // 📝 SUBMIT (UNCHANGED LOGIC)
   //////////////////////////////////////////////////////
 
   const handleSubmit = async (e: any) => {
@@ -223,18 +134,7 @@ console.log("Now:", now);
 
       const upperUnit = unitNo.trim().toUpperCase();
 
-      //////////////////////////////////////////////////////
-      // UNIT VALIDATION
-      //////////////////////////////////////////////////////
-
-      const unitRef = doc(
-        db,
-        "societies",
-        societyId,
-        "units",
-        upperUnit
-      );
-
+      const unitRef = doc(db, "societies", societyId, "units", upperUnit);
       const unitSnap = await getDoc(unitRef);
 
       if (!unitSnap.exists()) {
@@ -248,10 +148,6 @@ console.log("Now:", now);
         alert("No resident assigned to this unit");
         return;
       }
-
-      //////////////////////////////////////////////////////
-      // DUPLICATE CHECK
-      //////////////////////////////////////////////////////
 
       const duplicateQuery = query(
         collection(db, "societies", societyId, "visitorRequests"),
@@ -267,10 +163,6 @@ console.log("Now:", now);
         return;
       }
 
-      //////////////////////////////////////////////////////
-      // PHOTO UPLOAD
-      //////////////////////////////////////////////////////
-
       const photoRef = ref(
         storage,
         `visitor_photos/${Date.now()}_${photo.name}`
@@ -278,10 +170,6 @@ console.log("Now:", now);
 
       await uploadBytes(photoRef, photo);
       const photoUrl = await getDownloadURL(photoRef);
-
-      //////////////////////////////////////////////////////
-      // SAVE REQUEST
-      //////////////////////////////////////////////////////
 
       await addDoc(
         collection(db, "societies", societyId, "visitorRequests"),
@@ -300,14 +188,12 @@ console.log("Now:", now);
       );
 
       setSuccess(true);
-
       setName("");
       setPhone("");
       setUnitNo("");
       setPurpose("");
       setVehicleNumber("");
       setPhoto(null);
-
     } catch (error) {
       console.error(error);
       alert("Something went wrong");
@@ -321,34 +207,29 @@ console.log("Now:", now);
   // UI STATES
   //////////////////////////////////////////////////////
 
-  if (checkingQR) {
+  if (checkingQR)
     return (
       <div className="min-h-screen flex items-center justify-center">
         Checking QR...
       </div>
     );
-  }
 
-  if (!validQR) {
+  if (!validQR)
     return (
       <div className="min-h-screen flex items-center justify-center text-red-600 text-xl">
         Invalid or Expired QR Code
       </div>
     );
-  }
 
-  if (success) {
+  if (success)
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">
-            Request Submitted
-          </h1>
+      <div className="min-h-screen flex items-center justify-center text-center">
+        <div>
+          <h1 className="text-2xl font-bold mb-4">Request Submitted</h1>
           <p>Please wait for resident approval.</p>
         </div>
       </div>
     );
-  }
 
   //////////////////////////////////////////////////////
   // FORM UI
@@ -357,88 +238,63 @@ console.log("Now:", now);
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
       <div className="w-full max-w-md bg-white shadow-md rounded-lg p-6">
-
         <h1 className="text-xl font-bold mb-6 text-center">
           Visitor Entry
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-
-          <input
-            type="text"
-            placeholder="Visitor Name"
+          <input type="text" placeholder="Visitor Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full border p-2 rounded"
-          />
+            className="w-full border p-2 rounded" />
 
-          <input
-            type="tel"
-            placeholder="Phone Number"
+          <input type="tel" placeholder="Phone Number"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full border p-2 rounded"
-          />
+            className="w-full border p-2 rounded" />
 
-          <input
-            type="text"
-            placeholder="Unit Number"
+          <input type="text" placeholder="Unit Number"
             value={unitNo}
             onChange={(e) => setUnitNo(e.target.value)}
-            className="w-full border p-2 rounded"
-          />
+            className="w-full border p-2 rounded" />
 
-          <input
-            type="text"
-            placeholder="Purpose"
+          <input type="text" placeholder="Purpose"
             value={purpose}
             onChange={(e) => setPurpose(e.target.value)}
-            className="w-full border p-2 rounded"
-          />
+            className="w-full border p-2 rounded" />
 
-          <input
-            type="text"
-            placeholder="Vehicle Number (Optional)"
+          <input type="text" placeholder="Vehicle Number (Optional)"
             value={vehicleNumber}
             onChange={(e) => setVehicleNumber(e.target.value)}
-            className="w-full border p-2 rounded"
-          />
+            className="w-full border p-2 rounded" />
 
-          {!cameraOpen && !photo && (
-            <button
-              type="button"
-              onClick={startCamera}
-              className="w-full bg-blue-600 text-white p-2 rounded"
-            >
-              Take Live Photo
-            </button>
+          {/* Native Camera */}
+
+          {!photo && (
+            <>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                id="cameraInput"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setPhoto(file);
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  document.getElementById("cameraInput")?.click()
+                }
+                className="w-full bg-blue-600 text-white p-2 rounded"
+              >
+                Take Live Photo
+              </button>
+            </>
           )}
-
-          {cameraOpen && (
-  <div className="space-y-2">
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      style={{
-        width: "100%",
-        height: "300px",
-        objectFit: "cover",
-        backgroundColor: "black"
-      }}
-    />
-    <button
-      type="button"
-      onClick={capturePhoto}
-      className="w-full bg-green-600 text-white p-2 rounded"
-    >
-      Capture Photo
-    </button>
-  </div>
-)}
-
-          <canvas ref={canvasRef} className="hidden" />
 
           {photo && (
             <p className="text-green-600 text-sm">
@@ -453,7 +309,6 @@ console.log("Now:", now);
           >
             {loading ? "Submitting..." : "Submit"}
           </button>
-
         </form>
       </div>
     </div>
