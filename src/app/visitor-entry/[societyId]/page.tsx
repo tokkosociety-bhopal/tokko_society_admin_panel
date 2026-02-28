@@ -131,20 +131,19 @@ console.log("Now:", now);
   //////////////////////////////////////////////////////
 
   const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-      });
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+  video: { facingMode: "environment" },
+});
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-
-      setCameraOpen(true);
-    } catch (error) {
-      alert("Camera not accessible");
-    }
-  };
+if (videoRef.current) {
+  videoRef.current.srcObject = stream;
+}
+  } catch (err) {
+    alert("Camera permission denied");
+    console.error(err);
+  }
+};
 
   const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -400,7 +399,13 @@ console.log("Now:", now);
 
           {cameraOpen && (
             <div className="space-y-2">
-              <video ref={videoRef} autoPlay className="w-full rounded" />
+              <video
+  ref={videoRef}
+  autoPlay
+  playsInline
+  muted
+  className="w-full rounded"
+/>
               <button
                 type="button"
                 onClick={capturePhoto}
