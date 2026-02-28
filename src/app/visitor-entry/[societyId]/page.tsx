@@ -120,6 +120,17 @@ export default function VisitorEntryPage() {
     if (validQR) loadUnits();
   }, [societyId, validQR]);
 
+  useEffect(() => {
+  if (!unitNo) return;
+
+  const selectedUnit = units.find((u) => u.unitNo === unitNo);
+  if (!selectedUnit) return;
+
+  // Auto change type dropdown
+  setUnitTypeFilter(selectedUnit.type || "flat");
+
+}, [unitNo, units]);
+
   ////////////////////////////////////////////////////
   // FILTER + SEARCH
   ////////////////////////////////////////////////////
