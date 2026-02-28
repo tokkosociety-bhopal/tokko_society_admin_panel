@@ -253,10 +253,10 @@ export default function VisitorEntryPage() {
     );
 
   return (
-    <div className="min-h-screen bg-gray-100 flex justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 space-y-4">
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center px-3">
+  <div className="w-full sm:max-w-md max-w-sm bg-white rounded-2xl shadow-xl p-5 space-y-4">
 
-        <h1 className="text-xl font-bold text-center">Add Visitor</h1>
+        <h1 className="text-lg font-semibold text-center">Add Visitor</h1>
 
         {/* Photo */}
         <div className="flex justify-center">
@@ -297,20 +297,27 @@ export default function VisitorEntryPage() {
         </select>
 
         {/* Search */}
-        <input placeholder="Search Unit"
-          className="w-full border p-2 rounded"
-          value={unitSearch}
-          onChange={(e) => setUnitSearch(e.target.value)} />
+        {/* Unit Dropdown FIRST */}
+<select
+  className="w-full border p-2 rounded"
+  value={unitNo}
+  onChange={(e) => setUnitNo(e.target.value)}
+>
+  <option value="">Select Unit</option>
+  {filteredUnits.map((u) => (
+    <option key={u.id} value={u.unitNo}>
+      {u.unitNo}
+    </option>
+  ))}
+</select>
 
-        {/* Unit Dropdown */}
-        <select className="w-full border p-2 rounded"
-          value={unitNo}
-          onChange={(e) => setUnitNo(e.target.value)}>
-          <option value="">Select Unit</option>
-          {filteredUnits.map((u) => (
-            <option key={u.id} value={u.unitNo}>{u.unitNo}</option>
-          ))}
-        </select>
+{/* Search BELOW */}
+<input
+  placeholder="Search Unit"
+  className="w-full border p-2 rounded"
+  value={unitSearch}
+  onChange={(e) => setUnitSearch(e.target.value)}
+/>
 
         {residentName && (
           <p className="text-blue-600 font-semibold">
