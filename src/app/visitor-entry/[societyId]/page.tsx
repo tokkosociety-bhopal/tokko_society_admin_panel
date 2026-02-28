@@ -50,8 +50,7 @@ export default function VisitorEntryPage() {
   //////////////////////////////////////////////////////
   // 🔐 QR VALIDATION
   //////////////////////////////////////////////////////
-
-  useEffect(() => {
+useEffect(() => {
   const validateQR = async () => {
     try {
       if (!societyId || !key) {
@@ -69,39 +68,45 @@ export default function VisitorEntryPage() {
       const data = docSnap.data();
       const now = new Date();
 
-      // Basic validation checks
       if (!data) {
         setCheckingQR(false);
         return;
       }
 
+      // 1️⃣ Status check
       if (data.status !== "active") {
         setCheckingQR(false);
         return;
       }
 
-      if (!data.qrKey || data.qrKey !== key) {
+      // 2️⃣ Safe key comparison (trimmed)
+      const dbKey = String(data.qrKey || "").trim();
+      const urlKey = String(key || "").trim();
+
+      if (!dbKey || dbKey !== urlKey) {
         setCheckingQR(false);
         return;
       }
 
+      // 3️⃣ Expiry exists check
       if (!data.qrExpiry) {
         setCheckingQR(false);
         return;
       }
 
-      // Convert Firestore Timestamp safely
+      // 4️⃣ Convert Firestore Timestamp safely
       const expiryDate =
         typeof data.qrExpiry.toDate === "function"
           ? data.qrExpiry.toDate()
           : new Date(data.qrExpiry);
 
+      // 5️⃣ Expiry validation
       if (expiryDate.getTime() <= now.getTime()) {
         setCheckingQR(false);
         return;
       }
 
-      // ✅ If everything passes
+      // ✅ Everything valid
       setValidQR(true);
 
     } catch (error) {
