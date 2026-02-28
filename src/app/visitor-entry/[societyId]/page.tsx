@@ -20,10 +20,6 @@ export default function VisitorEntryPage() {
   const searchParams = useSearchParams();
   const key = searchParams.get("key");
 
-  //////////////////////////////////////////////////////
-  // STATES
-  //////////////////////////////////////////////////////
-
   const [checkingQR, setCheckingQR] = useState(true);
   const [validQR, setValidQR] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -35,13 +31,12 @@ export default function VisitorEntryPage() {
   const [unitNo, setUnitNo] = useState("");
   const [purpose, setPurpose] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
-
   const [photo, setPhoto] = useState<File | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   //////////////////////////////////////////////////////
-  // 🔐 QR VALIDATION (UNCHANGED)
+  // QR VALIDATION
   //////////////////////////////////////////////////////
 
   useEffect(() => {
@@ -53,7 +48,6 @@ export default function VisitorEntryPage() {
         }
 
         const docSnap = await getDoc(doc(db, "societies", societyId));
-
         if (!docSnap.exists()) {
           setCheckingQR(false);
           return;
@@ -62,42 +56,27 @@ export default function VisitorEntryPage() {
         const data = docSnap.data();
         const now = new Date();
 
-        if (!data) {
+        if (
+          data.status !== "active" ||
+          String(data.qrKey || "").trim() !== String(key).trim()
+        ) {
           setCheckingQR(false);
           return;
         }
 
-        if (data.status !== "active") {
-          setCheckingQR(false);
-          return;
-        }
-
-        const dbKey = String(data.qrKey || "").trim();
-        const urlKey = String(key || "").trim();
-
-        if (!dbKey || dbKey !== urlKey) {
-          setCheckingQR(false);
-          return;
-        }
-
-        if (!data.qrExpiry) {
-          setCheckingQR(false);
-          return;
-        }
-
-        const expiryDate =
-          typeof data.qrExpiry.toDate === "function"
+        const expiry =
+          typeof data.qrExpiry?.toDate === "function"
             ? data.qrExpiry.toDate()
             : new Date(data.qrExpiry);
 
-        if (expiryDate.getTime() <= now.getTime()) {
+        if (!expiry || expiry.getTime() <= now.getTime()) {
           setCheckingQR(false);
           return;
         }
 
         setValidQR(true);
-      } catch (error) {
-        console.error("QR validation error:", error);
+      } catch (e) {
+        console.error(e);
       } finally {
         setCheckingQR(false);
       }
@@ -107,12 +86,11 @@ export default function VisitorEntryPage() {
   }, [societyId, key]);
 
   //////////////////////////////////////////////////////
-  // 📝 SUBMIT (UNCHANGED LOGIC)
+  // SUBMIT
   //////////////////////////////////////////////////////
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
-
     if (submitting) return;
 
     if (!name.trim() || !phone.trim() || !unitNo.trim() || !purpose.trim()) {
@@ -136,6 +114,7 @@ export default function VisitorEntryPage() {
 
       const upperUnit = unitNo.trim().toUpperCase();
 
+      // Unit validation
       const unitRef = doc(db, "societies", societyId, "units", upperUnit);
       const unitSnap = await getDoc(unitRef);
 
@@ -147,12 +126,13 @@ export default function VisitorEntryPage() {
       const unitData = unitSnap.data();
 
       if (!unitData.residentUid) {
-        alert("No resident assigned to this unit");
+        alert("No resident assigned");
         return;
       }
 
+      // Duplicate pending check
       const duplicateQuery = query(
-        collection(db, "societies", societyId, "visitorRequests"),
+        collection(db, "societies", societyId, "visitors"),
         where("phone", "==", phone),
         where("unitNo", "==", upperUnit),
         where("status", "==", "pending")
@@ -161,10 +141,11 @@ export default function VisitorEntryPage() {
       const duplicateSnap = await getDocs(duplicateQuery);
 
       if (!duplicateSnap.empty) {
-        alert("Request already pending for this unit");
+        alert("Request already pending");
         return;
       }
 
+      // Upload photo
       const photoRef = ref(
         storage,
         `visitor_photos/${Date.now()}_${photo.name}`
@@ -173,8 +154,9 @@ export default function VisitorEntryPage() {
       await uploadBytes(photoRef, photo);
       const photoUrl = await getDownloadURL(photoRef);
 
+      // Save in visitors
       await addDoc(
-        collection(db, "societies", societyId, "visitorRequests"),
+        collection(db, "societies", societyId, "visitors"),
         {
           name: name.trim(),
           phone,
@@ -185,6 +167,8 @@ export default function VisitorEntryPage() {
           residentUid: unitData.residentUid,
           status: "pending",
           source: "qr",
+          entryTime: null,
+          exitTime: null,
           createdAt: serverTimestamp(),
         }
       );
@@ -206,22 +190,14 @@ export default function VisitorEntryPage() {
   };
 
   //////////////////////////////////////////////////////
-  // UI STATES
+  // UI
   //////////////////////////////////////////////////////
 
   if (checkingQR)
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        Checking QR...
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center">Checking QR...</div>;
 
   if (!validQR)
-    return (
-      <div className="min-h-screen flex items-center justify-center text-red-600 text-xl">
-        Invalid or Expired QR Code
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center text-red-600 text-xl">Invalid or Expired QR</div>;
 
   if (success)
     return (
@@ -233,16 +209,10 @@ export default function VisitorEntryPage() {
       </div>
     );
 
-  //////////////////////////////////////////////////////
-  // FORM UI
-  //////////////////////////////////////////////////////
-
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
       <div className="w-full max-w-md bg-white shadow-md rounded-lg p-6">
-        <h1 className="text-xl font-bold mb-6 text-center">
-          Visitor Entry
-        </h1>
+        <h1 className="text-xl font-bold mb-6 text-center">Visitor Entry</h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
 
@@ -271,8 +241,6 @@ export default function VisitorEntryPage() {
             onChange={(e) => setVehicleNumber(e.target.value)}
             className="w-full border p-2 rounded" />
 
-          {/* Native Camera */}
-
           {!photo && (
             <>
               <input
@@ -299,10 +267,7 @@ export default function VisitorEntryPage() {
 
           {photo && (
             <>
-              <p className="text-green-600 text-sm">
-                Photo captured successfully
-              </p>
-
+              <p className="text-green-600 text-sm">Photo captured successfully</p>
               <button
                 type="button"
                 onClick={() => setPhoto(null)}
