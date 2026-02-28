@@ -68,17 +68,42 @@ export default function VisitorEntryPage() {
       }
 
       const data = docSnap.data();
-
       const now = new Date();
 
-      if (
-        data.qrKey === key &&
-        data.status === "active" &&
-        data.qrExpiry &&
-        data.qrExpiry.toDate() > now
-      ) {
-        setValidQR(true);
+      // Basic validation checks
+      if (!data) {
+        setCheckingQR(false);
+        return;
       }
+
+      if (data.status !== "active") {
+        setCheckingQR(false);
+        return;
+      }
+
+      if (!data.qrKey || data.qrKey !== key) {
+        setCheckingQR(false);
+        return;
+      }
+
+      if (!data.qrExpiry) {
+        setCheckingQR(false);
+        return;
+      }
+
+      // Convert Firestore Timestamp safely
+      const expiryDate =
+        typeof data.qrExpiry.toDate === "function"
+          ? data.qrExpiry.toDate()
+          : new Date(data.qrExpiry);
+
+      if (expiryDate.getTime() <= now.getTime()) {
+        setCheckingQR(false);
+        return;
+      }
+
+      // ✅ If everything passes
+      setValidQR(true);
 
     } catch (error) {
       console.error("QR validation error:", error);
