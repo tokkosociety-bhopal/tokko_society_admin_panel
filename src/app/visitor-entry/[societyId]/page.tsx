@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   addDoc,
@@ -37,6 +37,8 @@ export default function VisitorEntryPage() {
   const [vehicleNumber, setVehicleNumber] = useState("");
 
   const [photo, setPhoto] = useState<File | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   //////////////////////////////////////////////////////
   // 🔐 QR VALIDATION (UNCHANGED)
@@ -243,6 +245,7 @@ export default function VisitorEntryPage() {
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+
           <input type="text" placeholder="Visitor Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -273,10 +276,10 @@ export default function VisitorEntryPage() {
           {!photo && (
             <>
               <input
+                ref={fileInputRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
-                id="cameraInput"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -286,9 +289,7 @@ export default function VisitorEntryPage() {
 
               <button
                 type="button"
-                onClick={() =>
-                  document.getElementById("cameraInput")?.click()
-                }
+                onClick={() => fileInputRef.current?.click()}
                 className="w-full bg-blue-600 text-white p-2 rounded"
               >
                 Take Live Photo
@@ -297,9 +298,19 @@ export default function VisitorEntryPage() {
           )}
 
           {photo && (
-            <p className="text-green-600 text-sm">
-              Photo captured successfully
-            </p>
+            <>
+              <p className="text-green-600 text-sm">
+                Photo captured successfully
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setPhoto(null)}
+                className="w-full bg-gray-300 text-black p-2 rounded"
+              >
+                Retake Photo
+              </button>
+            </>
           )}
 
           <button
@@ -309,6 +320,7 @@ export default function VisitorEntryPage() {
           >
             {loading ? "Submitting..." : "Submit"}
           </button>
+
         </form>
       </div>
     </div>
