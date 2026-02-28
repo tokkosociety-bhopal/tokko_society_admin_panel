@@ -138,9 +138,14 @@ console.log("Now:", now);
 
     if (videoRef.current) {
       videoRef.current.srcObject = stream;
+
+      // 🔥 Wait for metadata before playing
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current?.play();
+      };
     }
 
-    setCameraOpen(true);   // 🔥 THIS WAS MISSING
+    setCameraOpen(true);
 
   } catch (err) {
     alert("Camera permission denied");
@@ -149,35 +154,44 @@ console.log("Now:", now);
 };
 
   const capturePhoto = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+  if (!videoRef.current || !canvasRef.current) return;
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
+  const video = videoRef.current;
+  const canvas = canvasRef.current;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+  // 🔥 Force proper dimensions
+  const width = video.videoWidth || 640;
+  const height = video.videoHeight || 480;
 
-    const ctx = canvas.getContext("2d");
-    ctx?.drawImage(video, 0, 0);
+  canvas.width = width;
+  canvas.height = height;
 
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.8)
-    );
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
 
-    if (blob) {
-      const file = new File([blob], "visitor.jpg", {
-        type: "image/jpeg",
-      });
-      setPhoto(file);
-    }
+  ctx.drawImage(video, 0, 0, width, height);
 
-    const stream = video.srcObject as MediaStream | null;
-    if (stream) {
-    stream.getTracks().forEach((track) => track.stop());
-}
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", 0.9)
+  );
 
-    setCameraOpen(false);
-  };
+  if (!blob) {
+    alert("Failed to capture image");
+    return;
+  }
+
+  const file = new File([blob], "visitor.jpg", {
+    type: "image/jpeg",
+  });
+
+  setPhoto(file);
+
+  // Stop camera
+  const stream = video.srcObject as MediaStream;
+  stream?.getTracks().forEach((track) => track.stop());
+
+  setCameraOpen(false);
+};
 
   //////////////////////////////////////////////////////
   // 📝 SUBMIT
