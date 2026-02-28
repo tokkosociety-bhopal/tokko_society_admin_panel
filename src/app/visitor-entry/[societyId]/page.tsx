@@ -18,20 +18,19 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 
 export default function VisitorEntryPage() {
-  const params = useParams();
+  const { societyId } = useParams() as { societyId: string };
   const searchParams = useSearchParams();
 
-  const societyId = params.societyId as string;
   const key = searchParams.get("key");
+
+  const [checkingQR, setCheckingQR] = useState(true);
+  const [validQR, setValidQR] = useState(false);
 
   //////////////////////////////////////////////////////
   // STATES
   //////////////////////////////////////////////////////
 
   const [submitting, setSubmitting] = useState(false);
-
-  const [validQR, setValidQR] = useState(false);
-  const [checkingQR, setCheckingQR] = useState(true);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
