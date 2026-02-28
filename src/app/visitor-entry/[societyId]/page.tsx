@@ -33,10 +33,15 @@ export default function VisitorEntryPage() {
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
 
+  // ✅ NEW STATES
+  const [units, setUnits] = useState<any[]>([]);
+  const [filteredUnits, setFilteredUnits] = useState<any[]>([]);
+  const [unitTypeFilter, setUnitTypeFilter] = useState<string>("all");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   //////////////////////////////////////////////////////
-  // QR VALIDATION
+  // QR VALIDATION (UNTOUCHED)
   //////////////////////////////////////////////////////
 
   useEffect(() => {
@@ -86,7 +91,58 @@ export default function VisitorEntryPage() {
   }, [societyId, key]);
 
   //////////////////////////////////////////////////////
-  // SUBMIT
+  // ✅ LOAD UNITS (Resident Assigned Only)
+  //////////////////////////////////////////////////////
+
+  useEffect(() => {
+    const loadUnits = async () => {
+      if (!societyId) return;
+
+      const snap = await getDocs(
+        collection(db, "societies", societyId, "units")
+      );
+
+      const list = snap.docs
+        .map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            unitNo: data.unitNo,
+            residentUid: data.residentUid,
+            type: data.type || "flat",
+          };
+        })
+        .filter(
+          (u) =>
+            u.unitNo &&
+            u.residentUid &&
+            u.residentUid !== ""
+        )
+        .sort((a, b) => a.unitNo.localeCompare(b.unitNo));
+
+      setUnits(list);
+      setFilteredUnits(list);
+    };
+
+    loadUnits();
+  }, [societyId]);
+
+  //////////////////////////////////////////////////////
+  // ✅ UNIT TYPE FILTER
+  //////////////////////////////////////////////////////
+
+  useEffect(() => {
+    if (unitTypeFilter === "all") {
+      setFilteredUnits(units);
+    } else {
+      setFilteredUnits(
+        units.filter((u) => u.type === unitTypeFilter)
+      );
+    }
+  }, [unitTypeFilter, units]);
+
+  //////////////////////////////////////////////////////
+  // SUBMIT (ONLY UNIT VALIDATION CHANGED)
   //////////////////////////////////////////////////////
 
   const handleSubmit = async (e: any) => {
@@ -114,23 +170,27 @@ export default function VisitorEntryPage() {
 
       const upperUnit = unitNo.trim().toUpperCase();
 
-      // Unit validation
-      const unitRef = doc(db, "societies", societyId, "units", upperUnit);
-      const unitSnap = await getDoc(unitRef);
+      // ✅ UPDATED UNIT VALIDATION
+      const unitQuery = await getDocs(
+        query(
+          collection(db, "societies", societyId, "units"),
+          where("unitNo", "==", upperUnit)
+        )
+      );
 
-      if (!unitSnap.exists()) {
+      if (unitQuery.empty) {
         alert("Unit not found");
         return;
       }
 
-      const unitData = unitSnap.data();
+      const unitData = unitQuery.docs[0].data();
 
       if (!unitData.residentUid) {
         alert("No resident assigned");
         return;
       }
 
-      // Duplicate pending check
+      // Duplicate pending check (UNTOUCHED)
       const duplicateQuery = query(
         collection(db, "societies", societyId, "visitors"),
         where("phone", "==", phone),
@@ -145,7 +205,7 @@ export default function VisitorEntryPage() {
         return;
       }
 
-      // Upload photo
+      // Upload photo (UNTOUCHED)
       const photoRef = ref(
         storage,
         `visitor_photos/${Date.now()}_${photo.name}`
@@ -154,7 +214,7 @@ export default function VisitorEntryPage() {
       await uploadBytes(photoRef, photo);
       const photoUrl = await getDownloadURL(photoRef);
 
-      // Save in visitors
+      // Save visitor (UNTOUCHED)
       await addDoc(
         collection(db, "societies", societyId, "visitors"),
         {
@@ -226,15 +286,50 @@ export default function VisitorEntryPage() {
             onChange={(e) => setPhone(e.target.value)}
             className="w-full border p-2 rounded" />
 
-          <input type="text" placeholder="Unit Number"
+          {/* UNIT TYPE FILTER */}
+          <select
+            value={unitTypeFilter}
+            onChange={(e) => setUnitTypeFilter(e.target.value)}
+            className="w-full border p-2 rounded"
+          >
+            <option value="all">All Types</option>
+            <option value="flat">Flat</option>
+            <option value="duplex">Duplex</option>
+            <option value="villa">Villa</option>
+          </select>
+
+          {/* UNIT DROPDOWN */}
+          <select
             value={unitNo}
             onChange={(e) => setUnitNo(e.target.value)}
-            className="w-full border p-2 rounded" />
+            className="w-full border p-2 rounded"
+          >
+            <option value="">Select Unit</option>
+            {filteredUnits.map((unit) => (
+              <option key={unit.id} value={unit.unitNo}>
+                {unit.unitNo}
+              </option>
+            ))}
+          </select>
 
-          <input type="text" placeholder="Purpose"
+          {/* PURPOSE DROPDOWN */}
+          <select
             value={purpose}
             onChange={(e) => setPurpose(e.target.value)}
-            className="w-full border p-2 rounded" />
+            className="w-full border p-2 rounded"
+          >
+            <option value="">Select Purpose</option>
+            <option value="Guest">Guest</option>
+            <option value="Delivery">Delivery</option>
+            <option value="Food Delivery">Food Delivery</option>
+            <option value="Cab / Driver">Cab / Driver</option>
+            <option value="Maid">Maid</option>
+            <option value="Electrician">Electrician</option>
+            <option value="Plumber">Plumber</option>
+            <option value="Maintenance">Maintenance</option>
+            <option value="Courier">Courier</option>
+            <option value="Other">Other</option>
+          </select>
 
           <input type="text" placeholder="Vehicle Number (Optional)"
             value={vehicleNumber}
