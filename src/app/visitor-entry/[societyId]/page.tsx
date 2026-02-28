@@ -20,10 +20,6 @@ export default function VisitorEntryPage() {
   const searchParams = useSearchParams();
   const key = searchParams.get("key");
 
-  ////////////////////////////////////////////////////
-  // STATE
-  ////////////////////////////////////////////////////
-
   const [checkingQR, setCheckingQR] = useState(true);
   const [validQR, setValidQR] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -36,13 +32,12 @@ export default function VisitorEntryPage() {
   const [photo, setPhoto] = useState<File | null>(null);
 
   const [units, setUnits] = useState<any[]>([]);
-  const [filteredUnits, setFilteredUnits] = useState<any[]>([]);
-
   const [unitTypeFilter, setUnitTypeFilter] = useState("all");
+
+  const [blocks, setBlocks] = useState<string[]>([]);
   const [selectedBlock, setSelectedBlock] = useState("");
   const [selectedUnitNumber, setSelectedUnitNumber] = useState("");
 
-  const [blocks, setBlocks] = useState<string[]>([]);
   const [residentName, setResidentName] = useState("");
   const [approvalPreview, setApprovalPreview] = useState("");
   const [approvalColor, setApprovalColor] = useState("text-gray-500");
@@ -130,39 +125,26 @@ export default function VisitorEntryPage() {
   }, [validQR, societyId]);
 
   ////////////////////////////////////////////////////
-  // FILTER LOGIC
+  // FILTER BLOCKS BY TYPE
   ////////////////////////////////////////////////////
 
   useEffect(() => {
-    let list = [...units];
-
-    if (unitTypeFilter !== "all") {
-      list = list.filter((u) => u.type === unitTypeFilter);
-    }
-
-    if (selectedBlock) {
-      list = list.filter((u) => u.block === selectedBlock);
-    }
-
-    setFilteredUnits(list);
+    const filteredByType =
+      unitTypeFilter === "all"
+        ? units
+        : units.filter((u) => u.type === unitTypeFilter);
 
     const uniqueBlocks = [
-      ...new Set(
-        units
-          .filter((u) =>
-            unitTypeFilter === "all"
-              ? true
-              : u.type === unitTypeFilter
-          )
-          .map((u) => u.block)
-      ),
+      ...new Set(filteredByType.map((u) => u.block)),
     ];
 
     setBlocks(uniqueBlocks);
-  }, [unitTypeFilter, selectedBlock, units]);
+    setSelectedBlock("");
+    setSelectedUnitNumber("");
+  }, [unitTypeFilter, units]);
 
   ////////////////////////////////////////////////////
-  // LOAD RESIDENT + AUTO APPROVE
+  // RESIDENT + AUTO APPROVE
   ////////////////////////////////////////////////////
 
   useEffect(() => {
@@ -170,7 +152,6 @@ export default function VisitorEntryPage() {
       if (!selectedBlock || !selectedUnitNumber) return;
 
       const finalUnit = `${selectedBlock}-${selectedUnitNumber}`;
-
       const unit = units.find(
         (u) => u.fullUnit === finalUnit
       );
@@ -181,9 +162,7 @@ export default function VisitorEntryPage() {
       );
 
       if (userSnap.exists()) {
-        setResidentName(
-          userSnap.data().name || "Resident"
-        );
+        setResidentName(userSnap.data().name || "Resident");
       }
 
       if (phone.length === 10) {
@@ -238,11 +217,9 @@ export default function VisitorEntryPage() {
 
     try {
       const finalUnit = `${selectedBlock}-${selectedUnitNumber}`;
-
       const unit = units.find(
         (u) => u.fullUnit === finalUnit
       );
-      if (!unit) throw new Error("Unit not found");
 
       const photoRef = ref(
         storage,
@@ -261,7 +238,7 @@ export default function VisitorEntryPage() {
           purpose,
           vehicleNumber,
           photoUrl,
-          residentUid: unit.residentUid,
+          residentUid: unit?.residentUid,
           status: "pending",
           source: "qr",
           createdAt: serverTimestamp(),
@@ -270,7 +247,6 @@ export default function VisitorEntryPage() {
 
       setSuccess(true);
     } catch (err) {
-      console.error(err);
       alert("Something went wrong");
     }
 
@@ -296,6 +272,13 @@ export default function VisitorEntryPage() {
         </div>
       </div>
     );
+
+  const unitsForBlock = units.filter(
+    (u) =>
+      u.block === selectedBlock &&
+      (unitTypeFilter === "all" ||
+        u.type === unitTypeFilter)
+  );
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center px-3">
@@ -334,11 +317,7 @@ export default function VisitorEntryPage() {
         <select
           className="w-full border p-2 rounded"
           value={unitTypeFilter}
-          onChange={(e) => {
-            setUnitTypeFilter(e.target.value);
-            setSelectedBlock("");
-            setSelectedUnitNumber("");
-          }}
+          onChange={(e) => setUnitTypeFilter(e.target.value)}
         >
           <option value="all">All Types</option>
           <option value="flat">Flat</option>
@@ -365,17 +344,17 @@ export default function VisitorEntryPage() {
         <select
           className="w-full border p-2 rounded"
           value={selectedUnitNumber}
-          onChange={(e) => setSelectedUnitNumber(e.target.value)}
+          onChange={(e) =>
+            setSelectedUnitNumber(e.target.value)
+          }
           disabled={!selectedBlock}
         >
           <option value="">Select Unit</option>
-          {filteredUnits
-            .filter((u) => u.block === selectedBlock)
-            .map((u) => (
-              <option key={u.id} value={u.number}>
-                {u.number}
-              </option>
-            ))}
+          {unitsForBlock.map((u) => (
+            <option key={u.id} value={u.number}>
+              {u.number}
+            </option>
+          ))}
         </select>
 
         {residentName && (
