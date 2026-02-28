@@ -20,11 +20,14 @@ export default function VisitorEntryPage() {
   const searchParams = useSearchParams();
   const key = searchParams.get("key");
 
+  ////////////////////////////////////////////////////
+  // STATE
+  ////////////////////////////////////////////////////
+
   const [checkingQR, setCheckingQR] = useState(true);
   const [validQR, setValidQR] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -33,66 +36,61 @@ export default function VisitorEntryPage() {
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
 
-  // ✅ NEW STATES
   const [units, setUnits] = useState<any[]>([]);
   const [filteredUnits, setFilteredUnits] = useState<any[]>([]);
-  const [unitTypeFilter, setUnitTypeFilter] = useState<string>("all");
+  const [unitTypeFilter, setUnitTypeFilter] = useState("all");
+  const [unitSearch, setUnitSearch] = useState("");
+
+  const [residentName, setResidentName] = useState("");
+  const [approvalPreview, setApprovalPreview] = useState("");
+  const [approvalColor, setApprovalColor] = useState("text-gray-500");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  //////////////////////////////////////////////////////
-  // QR VALIDATION (UNTOUCHED)
-  //////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////
+  // QR VALIDATION
+  ////////////////////////////////////////////////////
 
   useEffect(() => {
     const validateQR = async () => {
-      try {
-        if (!societyId || !key) {
-          setCheckingQR(false);
-          return;
-        }
-
-        const docSnap = await getDoc(doc(db, "societies", societyId));
-        if (!docSnap.exists()) {
-          setCheckingQR(false);
-          return;
-        }
-
-        const data = docSnap.data();
-        const now = new Date();
-
-        if (
-          data.status !== "active" ||
-          String(data.qrKey || "").trim() !== String(key).trim()
-        ) {
-          setCheckingQR(false);
-          return;
-        }
-
-        const expiry =
-          typeof data.qrExpiry?.toDate === "function"
-            ? data.qrExpiry.toDate()
-            : new Date(data.qrExpiry);
-
-        if (!expiry || expiry.getTime() <= now.getTime()) {
-          setCheckingQR(false);
-          return;
-        }
-
-        setValidQR(true);
-      } catch (e) {
-        console.error(e);
-      } finally {
+      if (!societyId || !key) {
         setCheckingQR(false);
+        return;
       }
+
+      const snap = await getDoc(doc(db, "societies", societyId));
+      if (!snap.exists()) {
+        setCheckingQR(false);
+        return;
+      }
+
+      const data = snap.data();
+      const now = new Date();
+
+      const expiry =
+        typeof data.qrExpiry?.toDate === "function"
+          ? data.qrExpiry.toDate()
+          : new Date(data.qrExpiry);
+
+      if (
+        data.status !== "active" ||
+        data.qrKey !== key ||
+        expiry.getTime() <= now.getTime()
+      ) {
+        setCheckingQR(false);
+        return;
+      }
+
+      setValidQR(true);
+      setCheckingQR(false);
     };
 
     validateQR();
   }, [societyId, key]);
 
-  //////////////////////////////////////////////////////
-  // ✅ LOAD UNITS (Resident Assigned Only)
-  //////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////
+  // LOAD UNITS
+  ////////////////////////////////////////////////////
 
   useEffect(() => {
     const loadUnits = async () => {
@@ -104,108 +102,103 @@ export default function VisitorEntryPage() {
 
       const list = snap.docs
         .map((doc) => {
-          const data = doc.data();
+          const d = doc.data();
           return {
             id: doc.id,
-            unitNo: data.unitNo,
-            residentUid: data.residentUid,
-            type: data.type || "flat",
+            unitNo: d.unitNo,
+            residentUid: d.residentUid,
+            type: d.type || "flat",
           };
         })
-        .filter(
-          (u) =>
-            u.unitNo &&
-            u.residentUid &&
-            u.residentUid !== ""
-        )
+        .filter((u) => u.unitNo && u.residentUid)
         .sort((a, b) => a.unitNo.localeCompare(b.unitNo));
 
       setUnits(list);
       setFilteredUnits(list);
     };
 
-    loadUnits();
-  }, [societyId]);
+    if (validQR) loadUnits();
+  }, [societyId, validQR]);
 
-  //////////////////////////////////////////////////////
-  // ✅ UNIT TYPE FILTER
-  //////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////
+  // FILTER + SEARCH
+  ////////////////////////////////////////////////////
 
   useEffect(() => {
-    if (unitTypeFilter === "all") {
-      setFilteredUnits(units);
-    } else {
-      setFilteredUnits(
-        units.filter((u) => u.type === unitTypeFilter)
+    let list = [...units];
+
+    if (unitTypeFilter !== "all") {
+      list = list.filter((u) => u.type === unitTypeFilter);
+    }
+
+    if (unitSearch) {
+      list = list.filter((u) =>
+        u.unitNo.toLowerCase().includes(unitSearch.toLowerCase())
       );
     }
-  }, [unitTypeFilter, units]);
 
-  //////////////////////////////////////////////////////
-  // SUBMIT (ONLY UNIT VALIDATION CHANGED)
-  //////////////////////////////////////////////////////
+    setFilteredUnits(list);
+  }, [unitTypeFilter, unitSearch, units]);
+
+  ////////////////////////////////////////////////////
+  // LOAD RESIDENT NAME + AUTO APPROVAL PREVIEW
+  ////////////////////////////////////////////////////
+
+  useEffect(() => {
+    const loadResident = async () => {
+      if (!unitNo) return;
+
+      const unit = units.find((u) => u.unitNo === unitNo);
+      if (!unit) return;
+
+      const userSnap = await getDoc(doc(db, "users", unit.residentUid));
+      if (userSnap.exists()) {
+        setResidentName(userSnap.data().name || "Resident");
+      }
+
+      // Staff auto approval check
+      if (phone.length === 10) {
+        const staffQuery = await getDocs(
+          query(
+            collection(db, "societies", societyId, "staff"),
+            where("phone", "==", phone),
+            where("residentUid", "==", unit.residentUid),
+            where("active", "==", true),
+            where("autoApprove", "==", true)
+          )
+        );
+
+        if (!staffQuery.empty) {
+          setApprovalPreview("Auto Approved");
+          setApprovalColor("text-green-600");
+        } else {
+          setApprovalPreview("Resident Approval Required");
+          setApprovalColor("text-orange-600");
+        }
+      }
+    };
+
+    loadResident();
+  }, [unitNo, phone]);
+
+  ////////////////////////////////////////////////////
+  // SUBMIT
+  ////////////////////////////////////////////////////
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
-    if (submitting) return;
 
-    if (!name.trim() || !phone.trim() || !unitNo.trim() || !purpose.trim()) {
-      alert("All fields are required");
+    if (!name || !phone || !unitNo || !purpose || !photo) {
+      alert("Fill all required fields");
       return;
     }
 
-    if (!/^[0-9]{10}$/.test(phone)) {
-      alert("Enter valid 10 digit phone number");
-      return;
-    }
-
-    if (!photo) {
-      alert("Photo is required");
-      return;
-    }
+    setLoading(true);
 
     try {
-      setSubmitting(true);
-      setLoading(true);
+      const unit = units.find((u) => u.unitNo === unitNo);
+      if (!unit) throw new Error("Unit not found");
 
-      const upperUnit = unitNo.trim().toUpperCase();
-
-      // ✅ UPDATED UNIT VALIDATION
-      const unitQuery = await getDocs(
-        query(
-          collection(db, "societies", societyId, "units"),
-          where("unitNo", "==", upperUnit)
-        )
-      );
-
-      if (unitQuery.empty) {
-        alert("Unit not found");
-        return;
-      }
-
-      const unitData = unitQuery.docs[0].data();
-
-      if (!unitData.residentUid) {
-        alert("No resident assigned");
-        return;
-      }
-
-      // Duplicate pending check (UNTOUCHED)
-      const duplicateQuery = query(
-        collection(db, "societies", societyId, "visitors"),
-        where("phone", "==", phone),
-        where("unitNo", "==", upperUnit),
-        where("status", "==", "pending")
-      );
-
-      const duplicateSnap = await getDocs(duplicateQuery);
-
-      if (!duplicateSnap.empty) {
-        alert("Request already pending");
-        return;
-      }
-
-      // Upload photo (UNTOUCHED)
       const photoRef = ref(
         storage,
         `visitor_photos/${Date.now()}_${photo.name}`
@@ -214,50 +207,40 @@ export default function VisitorEntryPage() {
       await uploadBytes(photoRef, photo);
       const photoUrl = await getDownloadURL(photoRef);
 
-      // Save visitor (UNTOUCHED)
       await addDoc(
         collection(db, "societies", societyId, "visitors"),
         {
-          name: name.trim(),
+          name,
           phone,
-          unitNo: upperUnit,
-          purpose: purpose.trim(),
-          vehicleNumber: vehicleNumber.trim(),
+          unitNo,
+          purpose,
+          vehicleNumber,
           photoUrl,
-          residentUid: unitData.residentUid,
+          residentUid: unit.residentUid,
           status: "pending",
           source: "qr",
-          entryTime: null,
-          exitTime: null,
           createdAt: serverTimestamp(),
         }
       );
 
       setSuccess(true);
-      setName("");
-      setPhone("");
-      setUnitNo("");
-      setPurpose("");
-      setVehicleNumber("");
-      setPhoto(null);
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
       alert("Something went wrong");
-    } finally {
-      setLoading(false);
-      setSubmitting(false);
     }
+
+    setLoading(false);
   };
 
-  //////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////
   // UI
-  //////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////
 
   if (checkingQR)
     return <div className="min-h-screen flex items-center justify-center">Checking QR...</div>;
 
   if (!validQR)
-    return <div className="min-h-screen flex items-center justify-center text-red-600 text-xl">Invalid or Expired QR</div>;
+    return <div className="min-h-screen flex items-center justify-center text-red-600">Invalid QR</div>;
 
   if (success)
     return (
@@ -270,118 +253,107 @@ export default function VisitorEntryPage() {
     );
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100">
-      <div className="w-full max-w-md bg-white shadow-md rounded-lg p-6">
-        <h1 className="text-xl font-bold mb-6 text-center">Visitor Entry</h1>
+    <div className="min-h-screen bg-gray-100 flex justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 space-y-4">
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <h1 className="text-xl font-bold text-center">Add Visitor</h1>
 
-          <input type="text" placeholder="Visitor Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full border p-2 rounded" />
-
-          <input type="tel" placeholder="Phone Number"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="w-full border p-2 rounded" />
-
-          {/* UNIT TYPE FILTER */}
-          <select
-            value={unitTypeFilter}
-            onChange={(e) => setUnitTypeFilter(e.target.value)}
-            className="w-full border p-2 rounded"
+        {/* Photo */}
+        <div className="flex justify-center">
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center cursor-pointer"
           >
-            <option value="all">All Types</option>
-            <option value="flat">Flat</option>
-            <option value="duplex">Duplex</option>
-            <option value="villa">Villa</option>
-          </select>
+            {photo ? "📷" : "📸"}
+          </div>
+        </div>
 
-          {/* UNIT DROPDOWN */}
-          <select
-            value={unitNo}
-            onChange={(e) => setUnitNo(e.target.value)}
-            className="w-full border p-2 rounded"
-          >
-            <option value="">Select Unit</option>
-            {filteredUnits.map((unit) => (
-              <option key={unit.id} value={unit.unitNo}>
-                {unit.unitNo}
-              </option>
-            ))}
-          </select>
+        <input ref={fileInputRef} type="file" hidden accept="image/*"
+          capture="environment"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) setPhoto(file);
+          }} />
 
-          {/* PURPOSE DROPDOWN */}
-          <select
-            value={purpose}
-            onChange={(e) => setPurpose(e.target.value)}
-            className="w-full border p-2 rounded"
-          >
-            <option value="">Select Purpose</option>
-            <option value="Guest">Guest</option>
-            <option value="Delivery">Delivery</option>
-            <option value="Food Delivery">Food Delivery</option>
-            <option value="Cab / Driver">Cab / Driver</option>
-            <option value="Maid">Maid</option>
-            <option value="Electrician">Electrician</option>
-            <option value="Plumber">Plumber</option>
-            <option value="Maintenance">Maintenance</option>
-            <option value="Courier">Courier</option>
-            <option value="Other">Other</option>
-          </select>
+        <input placeholder="Visitor Name"
+          className="w-full border p-2 rounded"
+          value={name}
+          onChange={(e) => setName(e.target.value)} />
 
-          <input type="text" placeholder="Vehicle Number (Optional)"
-            value={vehicleNumber}
-            onChange={(e) => setVehicleNumber(e.target.value)}
-            className="w-full border p-2 rounded" />
+        <input placeholder="Phone"
+          maxLength={10}
+          className="w-full border p-2 rounded"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)} />
 
-          {!photo && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) setPhoto(file);
-                }}
-              />
+        {/* Unit Type Filter */}
+        <select className="w-full border p-2 rounded"
+          value={unitTypeFilter}
+          onChange={(e) => setUnitTypeFilter(e.target.value)}>
+          <option value="all">All Types</option>
+          <option value="flat">Flat</option>
+          <option value="duplex">Duplex</option>
+          <option value="villa">Villa</option>
+        </select>
 
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full bg-blue-600 text-white p-2 rounded"
-              >
-                Take Live Photo
-              </button>
-            </>
-          )}
+        {/* Search */}
+        <input placeholder="Search Unit"
+          className="w-full border p-2 rounded"
+          value={unitSearch}
+          onChange={(e) => setUnitSearch(e.target.value)} />
 
-          {photo && (
-            <>
-              <p className="text-green-600 text-sm">Photo captured successfully</p>
-              <button
-                type="button"
-                onClick={() => setPhoto(null)}
-                className="w-full bg-gray-300 text-black p-2 rounded"
-              >
-                Retake Photo
-              </button>
-            </>
-          )}
+        {/* Unit Dropdown */}
+        <select className="w-full border p-2 rounded"
+          value={unitNo}
+          onChange={(e) => setUnitNo(e.target.value)}>
+          <option value="">Select Unit</option>
+          {filteredUnits.map((u) => (
+            <option key={u.id} value={u.unitNo}>{u.unitNo}</option>
+          ))}
+        </select>
 
-          <button
-            type="submit"
-            disabled={loading || submitting}
-            className="w-full bg-black text-white p-2 rounded"
-          >
-            {loading ? "Submitting..." : "Submit"}
-          </button>
+        {residentName && (
+          <p className="text-blue-600 font-semibold">
+            Resident: {residentName}
+          </p>
+        )}
 
-        </form>
+        {approvalPreview && (
+          <p className={`${approvalColor} font-semibold`}>
+            {approvalPreview}
+          </p>
+        )}
+
+        {/* Purpose */}
+        <select className="w-full border p-2 rounded"
+          value={purpose}
+          onChange={(e) => setPurpose(e.target.value)}>
+          <option value="">Select Purpose</option>
+          <option>Guest</option>
+          <option>Delivery</option>
+          <option>Food Delivery</option>
+          <option>Cab / Driver</option>
+          <option>Maid</option>
+          <option>Electrician</option>
+          <option>Plumber</option>
+          <option>Maintenance</option>
+          <option>Courier</option>
+          <option>Other</option>
+        </select>
+
+        <input placeholder="Vehicle Number"
+          className="w-full border p-2 rounded"
+          value={vehicleNumber}
+          onChange={(e) => setVehicleNumber(e.target.value)} />
+
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          className="w-full bg-blue-600 text-white p-3 rounded-xl"
+        >
+          {loading ? "Submitting..." : "Add Visitor"}
+        </button>
+
       </div>
     </div>
   );
