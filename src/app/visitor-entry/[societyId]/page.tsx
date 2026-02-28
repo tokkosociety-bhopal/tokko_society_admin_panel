@@ -31,16 +31,18 @@ export default function VisitorEntryPage() {
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [unitNo, setUnitNo] = useState("");
   const [purpose, setPurpose] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
 
   const [units, setUnits] = useState<any[]>([]);
   const [filteredUnits, setFilteredUnits] = useState<any[]>([]);
-  const [unitTypeFilter, setUnitTypeFilter] = useState("all");
-  const [unitSearch, setUnitSearch] = useState("");
 
+  const [unitTypeFilter, setUnitTypeFilter] = useState("all");
+  const [selectedBlock, setSelectedBlock] = useState("");
+  const [selectedUnitNumber, setSelectedUnitNumber] = useState("");
+
+  const [blocks, setBlocks] = useState<string[]>([]);
   const [residentName, setResidentName] = useState("");
   const [approvalPreview, setApprovalPreview] = useState("");
   const [approvalColor, setApprovalColor] = useState("text-gray-500");
@@ -94,7 +96,7 @@ export default function VisitorEntryPage() {
 
   useEffect(() => {
     const loadUnits = async () => {
-      if (!societyId) return;
+      if (!validQR) return;
 
       const snap = await getDocs(
         collection(db, "societies", societyId, "units")
@@ -103,36 +105,32 @@ export default function VisitorEntryPage() {
       const list = snap.docs
         .map((doc) => {
           const d = doc.data();
+          const full = d.unitNo;
+
+          if (!full || !d.residentUid) return null;
+
+          const parts = full.split("-");
+          if (parts.length !== 2) return null;
+
           return {
             id: doc.id,
-            unitNo: d.unitNo,
+            fullUnit: full,
+            block: parts[0],
+            number: parts[1],
             residentUid: d.residentUid,
             type: d.type || "flat",
           };
         })
-        .filter((u) => u.unitNo && u.residentUid)
-        .sort((a, b) => a.unitNo.localeCompare(b.unitNo));
+        .filter(Boolean);
 
-      setUnits(list);
-      setFilteredUnits(list);
+      setUnits(list as any[]);
     };
 
-    if (validQR) loadUnits();
-  }, [societyId, validQR]);
-
-  useEffect(() => {
-  if (!unitNo) return;
-
-  const selectedUnit = units.find((u) => u.unitNo === unitNo);
-  if (!selectedUnit) return;
-
-  // Auto change type dropdown
-  setUnitTypeFilter(selectedUnit.type || "flat");
-
-}, [unitNo, units]);
+    loadUnits();
+  }, [validQR, societyId]);
 
   ////////////////////////////////////////////////////
-  // FILTER + SEARCH
+  // FILTER LOGIC
   ////////////////////////////////////////////////////
 
   useEffect(() => {
@@ -142,32 +140,52 @@ export default function VisitorEntryPage() {
       list = list.filter((u) => u.type === unitTypeFilter);
     }
 
-    if (unitSearch) {
-      list = list.filter((u) =>
-        u.unitNo.toLowerCase().includes(unitSearch.toLowerCase())
-      );
+    if (selectedBlock) {
+      list = list.filter((u) => u.block === selectedBlock);
     }
 
     setFilteredUnits(list);
-  }, [unitTypeFilter, unitSearch, units]);
+
+    const uniqueBlocks = [
+      ...new Set(
+        units
+          .filter((u) =>
+            unitTypeFilter === "all"
+              ? true
+              : u.type === unitTypeFilter
+          )
+          .map((u) => u.block)
+      ),
+    ];
+
+    setBlocks(uniqueBlocks);
+  }, [unitTypeFilter, selectedBlock, units]);
 
   ////////////////////////////////////////////////////
-  // LOAD RESIDENT NAME + AUTO APPROVAL PREVIEW
+  // LOAD RESIDENT + AUTO APPROVE
   ////////////////////////////////////////////////////
 
   useEffect(() => {
     const loadResident = async () => {
-      if (!unitNo) return;
+      if (!selectedBlock || !selectedUnitNumber) return;
 
-      const unit = units.find((u) => u.unitNo === unitNo);
+      const finalUnit = `${selectedBlock}-${selectedUnitNumber}`;
+
+      const unit = units.find(
+        (u) => u.fullUnit === finalUnit
+      );
       if (!unit) return;
 
-      const userSnap = await getDoc(doc(db, "users", unit.residentUid));
+      const userSnap = await getDoc(
+        doc(db, "users", unit.residentUid)
+      );
+
       if (userSnap.exists()) {
-        setResidentName(userSnap.data().name || "Resident");
+        setResidentName(
+          userSnap.data().name || "Resident"
+        );
       }
 
-      // Staff auto approval check
       if (phone.length === 10) {
         const staffQuery = await getDocs(
           query(
@@ -190,7 +208,7 @@ export default function VisitorEntryPage() {
     };
 
     loadResident();
-  }, [unitNo, phone]);
+  }, [selectedBlock, selectedUnitNumber, phone]);
 
   ////////////////////////////////////////////////////
   // SUBMIT
@@ -199,15 +217,31 @@ export default function VisitorEntryPage() {
   const handleSubmit = async (e: any) => {
     e.preventDefault();
 
-    if (!name || !phone || !unitNo || !purpose || !photo) {
+    if (
+      !name ||
+      !phone ||
+      !purpose ||
+      !photo ||
+      !selectedBlock ||
+      !selectedUnitNumber
+    ) {
       alert("Fill all required fields");
+      return;
+    }
+
+    if (!/^[0-9]{10}$/.test(phone)) {
+      alert("Enter valid 10 digit phone");
       return;
     }
 
     setLoading(true);
 
     try {
-      const unit = units.find((u) => u.unitNo === unitNo);
+      const finalUnit = `${selectedBlock}-${selectedUnitNumber}`;
+
+      const unit = units.find(
+        (u) => u.fullUnit === finalUnit
+      );
       if (!unit) throw new Error("Unit not found");
 
       const photoRef = ref(
@@ -223,7 +257,7 @@ export default function VisitorEntryPage() {
         {
           name,
           phone,
-          unitNo,
+          unitNo: finalUnit,
           purpose,
           vehicleNumber,
           photoUrl,
@@ -265,17 +299,16 @@ export default function VisitorEntryPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center px-3">
-  <div className="w-full sm:max-w-md max-w-sm bg-white rounded-2xl shadow-xl p-5 space-y-4">
+      <div className="w-full sm:max-w-md max-w-sm bg-white rounded-2xl shadow-xl p-5 space-y-4">
 
         <h1 className="text-lg font-semibold text-center">Add Visitor</h1>
 
-        {/* Photo */}
         <div className="flex justify-center">
           <div
             onClick={() => fileInputRef.current?.click()}
             className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center cursor-pointer"
           >
-            {photo ? "📷" : "📸"}
+            📷
           </div>
         </div>
 
@@ -297,38 +330,53 @@ export default function VisitorEntryPage() {
           value={phone}
           onChange={(e) => setPhone(e.target.value)} />
 
-        {/* Unit Type Filter */}
-        <select className="w-full border p-2 rounded"
+        {/* TYPE */}
+        <select
+          className="w-full border p-2 rounded"
           value={unitTypeFilter}
-          onChange={(e) => setUnitTypeFilter(e.target.value)}>
+          onChange={(e) => {
+            setUnitTypeFilter(e.target.value);
+            setSelectedBlock("");
+            setSelectedUnitNumber("");
+          }}
+        >
           <option value="all">All Types</option>
           <option value="flat">Flat</option>
           <option value="duplex">Duplex</option>
           <option value="villa">Villa</option>
         </select>
 
-        {/* Search */}
-        {/* Unit Dropdown FIRST */}
-<select
-  className="w-full border p-2 rounded"
-  value={unitNo}
-  onChange={(e) => setUnitNo(e.target.value)}
->
-  <option value="">Select Unit</option>
-  {filteredUnits.map((u) => (
-    <option key={u.id} value={u.unitNo}>
-      {u.unitNo}
-    </option>
-  ))}
-</select>
+        {/* BLOCK */}
+        <select
+          className="w-full border p-2 rounded"
+          value={selectedBlock}
+          onChange={(e) => {
+            setSelectedBlock(e.target.value);
+            setSelectedUnitNumber("");
+          }}
+        >
+          <option value="">Select Block</option>
+          {blocks.map((b) => (
+            <option key={b} value={b}>{b}</option>
+          ))}
+        </select>
 
-{/* Search BELOW */}
-<input
-  placeholder="Search Unit"
-  className="w-full border p-2 rounded"
-  value={unitSearch}
-  onChange={(e) => setUnitSearch(e.target.value)}
-/>
+        {/* UNIT NUMBER */}
+        <select
+          className="w-full border p-2 rounded"
+          value={selectedUnitNumber}
+          onChange={(e) => setSelectedUnitNumber(e.target.value)}
+          disabled={!selectedBlock}
+        >
+          <option value="">Select Unit</option>
+          {filteredUnits
+            .filter((u) => u.block === selectedBlock)
+            .map((u) => (
+              <option key={u.id} value={u.number}>
+                {u.number}
+              </option>
+            ))}
+        </select>
 
         {residentName && (
           <p className="text-blue-600 font-semibold">
@@ -342,7 +390,6 @@ export default function VisitorEntryPage() {
           </p>
         )}
 
-        {/* Purpose */}
         <select className="w-full border p-2 rounded"
           value={purpose}
           onChange={(e) => setPurpose(e.target.value)}>
