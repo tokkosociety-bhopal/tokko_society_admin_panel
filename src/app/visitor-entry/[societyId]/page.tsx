@@ -37,6 +37,7 @@ export default function VisitorEntryPage() {
   const [blocks, setBlocks] = useState<string[]>([]);
   const [selectedBlock, setSelectedBlock] = useState("");
   const [selectedUnitNumber, setSelectedUnitNumber] = useState("");
+  const [qrExpiryDate, setQrExpiryDate] = useState<Date | null>(null);
 
   const [residentName, setResidentName] = useState("");
   const [approvalPreview, setApprovalPreview] = useState("");
@@ -78,6 +79,7 @@ export default function VisitorEntryPage() {
         return;
       }
 
+      setQrExpiryDate(expiry);
       setValidQR(true);
       setCheckingQR(false);
     };
@@ -207,6 +209,11 @@ export default function VisitorEntryPage() {
       alert("Fill all required fields");
       return;
     }
+      // 👇 YAHAN ADD KARO
+  if (!qrExpiryDate) {
+    alert("QR expired");
+    return;
+  }
 
     if (!/^[0-9]{10}$/.test(phone)) {
       alert("Enter valid 10 digit phone");
@@ -241,6 +248,7 @@ export default function VisitorEntryPage() {
           residentUid: unit?.residentUid,
           status: "pending",
           source: "qr",
+          qrExpiry: qrExpiryDate,   // 👈 ADD THIS
           createdAt: serverTimestamp(),
         }
       );
